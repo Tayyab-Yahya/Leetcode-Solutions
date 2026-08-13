@@ -14,7 +14,7 @@ contents: write
 
 jobs:
 update-stats:
-name: Calculate LeetCode Statistics
+name: Update LeetCode Statistics
 runs-on: ubuntu-latest
 
 ```
@@ -26,8 +26,6 @@ steps:
 
   - name: Checkout repository
     uses: actions/checkout@v4
-    with:
-      fetch-depth: 0
 
   # ------------------------------------------------------------
   # Setup Python
@@ -48,12 +46,10 @@ steps:
       pip install requests
 
   # ------------------------------------------------------------
-  # Calculate statistics and update README
+  # Calculate statistics
   # ------------------------------------------------------------
 
-  - name: Update LeetCode statistics
-    env:
-      LEETCODE_API_URL: https://leetcode.com/api/problems/all/
+  - name: Calculate LeetCode statistics
     run: |
 
       python <<'PY'
@@ -69,7 +65,7 @@ steps:
 
       README = Path("README.md")
 
-      SOLUTION_EXTENSIONS = {
+      EXTENSIONS = {
           ".cpp",
           ".cc",
           ".c",
@@ -83,110 +79,243 @@ steps:
           ".cs"
       }
 
-      API_URL = "https://leetcode.com/api/problems/all/"
-
 
       # ============================================================
-      # Find all solution files
+      # STEP 1 — Find solution files
       # ============================================================
+
+      print("")
+      print("==============================================")
+      print("   SCANNING LEETCODE SOLUTIONS")
+      print("==============================================")
+      print("")
 
       problem_ids = set()
-
-      print("\nScanning repository for solution files...\n")
 
       for path in Path(".").rglob("*"):
 
           if not path.is_file():
               continue
 
-          # Ignore hidden directories such as .git and .github
+          # Ignore hidden folders such as .git and .github
           if any(part.startswith(".") for part in path.parts):
               continue
 
-          if path.suffix.lower() not in SOLUTION_EXTENSIONS:
+          if path.suffix.lower() not in EXTENSIONS:
               continue
 
-          # Accept:
+          # Supported filename formats:
           #
-          # 123-Problem.cpp
-          # 123.Problem.cpp
-          # 123 Problem.cpp
+          # 1-Two Sum.cpp
+          # 1.Two Sum.cpp
+          # 1 Two Sum.cpp
+          # 0001-Two Sum.cpp
           #
-          # The number must be at the beginning of the filename.
+          # Number MUST be at the beginning.
 
           match = re.match(
               r"^\s*(\d+)\s*[-._ ]",
               path.name
           )
 
-          if not match:
-              continue
+          if match:
 
-          problem_id = int(match.group(1))
+              problem_id = int(match.group(1))
 
-          problem_ids.add(problem_id)
+              problem_ids.add(problem_id)
 
-          print(f"Found: {path.name} -> Problem #{problem_id}")
+              print(
+                  f"✓ {path.name} "
+                  f"→ Problem #{problem_id}"
+              )
 
 
-      print("\n----------------------------------------")
-      print(f"Unique problems found: {len(problem_ids)}")
-      print("----------------------------------------\n")
+      print("")
+      print("----------------------------------------------")
+      print(
+          f"Unique problems found: {len(problem_ids)}"
+      )
+      print("----------------------------------------------")
+      print("")
 
 
       # ============================================================
-      # Fetch LeetCode problem data
+      # STEP 2 — Get LeetCode problem data
       # ============================================================
 
-      headers = {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "application/json",
-          "Referer": "https://leetcode.com/"
-      }
-
-      print("Fetching LeetCode problem data...")
-
-      response = requests.get(
-          API_URL,
-          headers=headers,
-          timeout=60
+      print(
+          "Fetching problem data from LeetCode..."
       )
 
-      response.raise_for_status()
+      graphql_url = "https://leetcode.com/graphql/"
 
-      data = response.json()
+
+      query = """
+      query problemsetQuestionList(
+          $categorySlug: String
+          $limit: Int
+          $skip: Int
+      ) {
+          problemsetQuestionList(
+              categorySlug: $categorySlug
+              limit: $limit
+              skip: $skip
+          ) {
+              total
+              questions {
+                  questionFrontendId
+                  difficulty
+                  title
+                  titleSlug
+              }
+          }
+      }
+      """
+
+
+      headers = {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0",
+          "Referer": "https://leetcode.com/problemset/all/"
+      }
 
 
       # ============================================================
-      # Create problem difficulty lookup
+      # STEP 3 — Fetch ALL problems using pagination
       # ============================================================
 
       difficulty_map = {}
 
-      for item in data.get("stat_status_pairs", []):
+      limit = 100
+      skip = 0
 
-          stat = item.get("stat", {})
-          difficulty_data = item.get("difficulty", {})
+      while True:
 
-          question_id = stat.get("frontend_question_id")
-          difficulty = difficulty_data.get("level")
+          payload = {
+              "query": query,
+              "variables": {
+                  "categorySlug": "",
+                  "limit": limit,
+                  "skip": skip
+              }
+          }
 
-          if question_id is None:
-              continue
+          response = requests.post(
+              graphql_url,
+              json=payload,
+              headers=headers,
+              timeout=60
+          )
 
-          if difficulty is None:
-              continue
+          response.raise_for_status()
 
-          try:
-              question_id = int(question_id)
-          except (TypeError, ValueError):
-              continue
+          result = response.json()
 
-          difficulty_map[question_id] = difficulty
+
+          # --------------------------------------------------------
+          # Check GraphQL errors
+          # --------------------------------------------------------
+
+          if "errors" in result:
+
+              print("")
+              print(
+                  "LeetCode GraphQL returned an error:"
+              )
+
+              print(result["errors"])
+
+              raise RuntimeError(
+                  "Unable to retrieve LeetCode problem data."
+              )
+
+
+          problemset = (
+              result
+              .get("data", {})
+              .get("problemsetQuestionList")
+          )
+
+
+          if not problemset:
+
+              raise RuntimeError(
+                  "LeetCode returned no problem data."
+              )
+
+
+          questions = problemset.get(
+              "questions",
+              []
+          )
+
+          total_available = problemset.get(
+              "total",
+              0
+          )
+
+
+          # --------------------------------------------------------
+          # Store difficulty
+          # --------------------------------------------------------
+
+          for question in questions:
+
+              question_id = question.get(
+                  "questionFrontendId"
+              )
+
+              difficulty = question.get(
+                  "difficulty"
+              )
+
+              if not question_id:
+                  continue
+
+              try:
+                  question_id = int(question_id)
+
+              except (TypeError, ValueError):
+                  continue
+
+              difficulty_map[
+                  question_id
+              ] = difficulty
+
+
+          print(
+              f"Fetched {len(difficulty_map)} "
+              f"problems..."
+          )
+
+
+          # --------------------------------------------------------
+          # Stop when everything has been fetched
+          # --------------------------------------------------------
+
+          if (
+              len(questions) == 0
+              or
+              skip + len(questions)
+              >= total_available
+          ):
+
+              break
+
+
+          skip += limit
+
+
+      print("")
+      print(
+          f"Total LeetCode problems loaded: "
+          f"{len(difficulty_map)}"
+      )
+      print("")
 
 
       # ============================================================
-      # Count difficulties
+      # STEP 4 — Calculate difficulty statistics
       # ============================================================
 
       easy = 0
@@ -195,20 +324,31 @@ steps:
 
       unknown = []
 
+
       for problem_id in sorted(problem_ids):
 
-          difficulty = difficulty_map.get(problem_id)
+          difficulty = difficulty_map.get(
+              problem_id
+          )
 
-          if difficulty == 1:
+
+          if difficulty == "Easy":
+
               easy += 1
 
-          elif difficulty == 2:
+
+          elif difficulty == "Medium":
+
               medium += 1
 
-          elif difficulty == 3:
+
+          elif difficulty == "Hard":
+
               hard += 1
 
+
           else:
+
               unknown.append(problem_id)
 
 
@@ -216,46 +356,47 @@ steps:
 
 
       # ============================================================
-      # Display statistics
+      # STEP 5 — Display results
       # ============================================================
 
-      print("\n========================================")
+      print("")
+      print("==============================================")
       print("        LEETCODE STATISTICS")
-      print("========================================")
-      print(f"Total Problems : {total}")
-      print(f"Easy           : {easy}")
-      print(f"Medium         : {medium}")
-      print(f"Hard           : {hard}")
-      print("========================================\n")
+      print("==============================================")
+      print("")
+      print(f"🧠 Total  : {total}")
+      print(f"🟢 Easy   : {easy}")
+      print(f"🟡 Medium : {medium}")
+      print(f"🔴 Hard   : {hard}")
+      print("")
 
 
       if unknown:
 
           print(
-              "WARNING: Difficulty could not be determined for:"
+              "⚠️ Difficulty not found for:"
           )
 
           print(
               ", ".join(
-                  str(problem_id)
-                  for problem_id in unknown
+                  str(x)
+                  for x in unknown
               )
           )
 
-          print(
-              "\nThese problems are still included in TOTAL."
-          )
+          print("")
 
 
       # ============================================================
-      # Read README
+      # STEP 6 — Read README
       # ============================================================
 
       if not README.exists():
 
           raise FileNotFoundError(
-              "README.md was not found."
+              "README.md does not exist."
           )
+
 
       readme = README.read_text(
           encoding="utf-8"
@@ -263,10 +404,10 @@ steps:
 
 
       # ============================================================
-      # Helper function for replacing README markers
+      # STEP 7 — Update README markers
       # ============================================================
 
-      def update_marker(
+      def replace_marker(
           text,
           start_marker,
           end_marker,
@@ -275,14 +416,18 @@ steps:
 
           pattern = (
               re.escape(start_marker)
-              + r".*?"
-              + re.escape(end_marker)
+              +
+              r".*?"
+              +
+              re.escape(end_marker)
           )
 
           replacement = (
               start_marker
-              + str(value)
-              + end_marker
+              +
+              str(value)
+              +
+              end_marker
           )
 
           updated, count = re.subn(
@@ -293,42 +438,47 @@ steps:
               flags=re.DOTALL
           )
 
+
           if count != 1:
 
               raise RuntimeError(
-                  f"Could not find README markers: "
-                  f"{start_marker} ... {end_marker}"
+                  f"README marker not found: "
+                  f"{start_marker}"
               )
+
 
           return updated
 
 
       # ============================================================
-      # Update main statistics
+      # Main statistics
       # ============================================================
 
-      readme = update_marker(
+      readme = replace_marker(
           readme,
           "<!-- TOTAL_START -->",
           "<!-- TOTAL_END -->",
           total
       )
 
-      readme = update_marker(
+
+      readme = replace_marker(
           readme,
           "<!-- EASY_START -->",
           "<!-- EASY_END -->",
           easy
       )
 
-      readme = update_marker(
+
+      readme = replace_marker(
           readme,
           "<!-- MEDIUM_START -->",
           "<!-- MEDIUM_END -->",
           medium
       )
 
-      readme = update_marker(
+
+      readme = replace_marker(
           readme,
           "<!-- HARD_START -->",
           "<!-- HARD_END -->",
@@ -337,24 +487,26 @@ steps:
 
 
       # ============================================================
-      # Update difficulty progress section
+      # Difficulty progress section
       # ============================================================
 
-      readme = update_marker(
+      readme = replace_marker(
           readme,
           "<!-- EASY_PROGRESS_START -->",
           "<!-- EASY_PROGRESS_END -->",
           easy
       )
 
-      readme = update_marker(
+
+      readme = replace_marker(
           readme,
           "<!-- MEDIUM_PROGRESS_START -->",
           "<!-- MEDIUM_PROGRESS_END -->",
           medium
       )
 
-      readme = update_marker(
+
+      readme = replace_marker(
           readme,
           "<!-- HARD_PROGRESS_START -->",
           "<!-- HARD_PROGRESS_END -->",
@@ -363,7 +515,7 @@ steps:
 
 
       # ============================================================
-      # Save README
+      # STEP 8 — Write README
       # ============================================================
 
       README.write_text(
@@ -371,34 +523,42 @@ steps:
           encoding="utf-8"
       )
 
-      print("\nREADME successfully updated! 🚀")
+
+      print("")
+      print(
+          "✅ README successfully updated!"
+      )
+      print("")
 
       PY
 
+
   # ------------------------------------------------------------
-  # Commit README if statistics changed
+  # Commit changes
   # ------------------------------------------------------------
 
   - name: Commit updated README
     run: |
 
-      git config user.name "github-actions[bot]"
+      git config user.name \
+        "github-actions[bot]"
 
       git config user.email \
         "41898282+github-actions[bot]@users.noreply.github.com"
 
       git add README.md
 
+
       if git diff --cached --quiet; then
 
-        echo "No README changes detected."
+          echo "No changes to README."
 
       else
 
-        git commit \
-          -m "chore: update LeetCode statistics"
+          git commit \
+            -m "chore: update LeetCode statistics"
 
-        git push
+          git push
 
       fi
 ```
