@@ -161,11 +161,59 @@ jobs:
 
           response.raise_for_status()
 
-          problems = response.json()
+          data = response.json()
 
           print(
-              f"Database downloaded successfully."
+              "Database downloaded successfully."
           )
+
+          # The downloaded JSON may be either:
+          # 1. A list of problem objects
+          # 2. A dictionary containing the problem objects
+
+          if isinstance(data, list):
+
+              problems = data
+
+          elif isinstance(data, dict):
+
+              # If the JSON has a wrapper such as:
+              # {"problems": [...]}
+              if isinstance(data.get("problems"), list):
+
+                  problems = data["problems"]
+
+              # If the dictionary itself contains
+              # problem objects as values
+              elif all(
+                  isinstance(value, dict)
+                  for value in data.values()
+              ):
+
+                  problems = list(data.values())
+
+              else:
+
+                  print(
+                      "ERROR: Could not determine the "
+                      "structure of the LeetCode database."
+                  )
+
+                  print(
+                      "Top-level keys:",
+                      list(data.keys())[:20]
+                  )
+
+                  sys.exit(1)
+
+          else:
+
+              print(
+                  "ERROR: Unexpected JSON format."
+              )
+
+              sys.exit(1)
+
 
           print(
               f"Problems in database: "
@@ -174,60 +222,62 @@ jobs:
 
           print()
 
-
-          # ============================================================
-          # STEP 3 — BUILD DIFFICULTY MAP
-          # ============================================================
-
-          print("=" * 60)
-          print("BUILDING DIFFICULTY MAP")
-          print("=" * 60)
-
-          difficulty_map = {}
-
-          for problem in problems:
-
-              frontend_id = problem.get(
-                  "frontend_id"
-              )
-
-              difficulty = problem.get(
-                  "difficulty"
-              )
-
-              if not frontend_id:
-                  continue
-
-              try:
-
-                  frontend_id = int(
-                      frontend_id
-                  )
-
-              except (
-                  ValueError,
-                  TypeError
-              ):
-
-                  continue
-
-              if difficulty in {
-                  "Easy",
-                  "Medium",
-                  "Hard"
-              }:
-
-                  difficulty_map[
-                      frontend_id
-                  ] = difficulty
+                    print()
 
 
-          print(
-              f"Difficulty entries loaded: "
-              f"{len(difficulty_map)}"
-          )
+                    # ============================================================
+                    # STEP 3 — BUILD DIFFICULTY MAP
+                    # ============================================================
 
-          print()
+                    print("=" * 60)
+                    print("BUILDING DIFFICULTY MAP")
+                    print("=" * 60)
+
+                    difficulty_map = {}
+
+                    for problem in problems:
+
+                        frontend_id = problem.get(
+                            "frontend_id"
+                        )
+
+                        difficulty = problem.get(
+                            "difficulty"
+                        )
+
+                        if not frontend_id:
+                            continue
+
+                        try:
+
+                            frontend_id = int(
+                                frontend_id
+                            )
+
+                        except (
+                            ValueError,
+                            TypeError
+                        ):
+
+                            continue
+
+                        if difficulty in {
+                            "Easy",
+                            "Medium",
+                            "Hard"
+                        }:
+
+                            difficulty_map[
+                                frontend_id
+                            ] = difficulty
+
+
+                    print(
+                        f"Difficulty entries loaded: "
+                        f"{len(difficulty_map)}"
+                    )
+
+                    print()
 
 
           # ============================================================
