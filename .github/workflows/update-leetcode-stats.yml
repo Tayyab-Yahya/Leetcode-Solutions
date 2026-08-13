@@ -183,6 +183,12 @@ jobs:
 
                   problems = data["problems"]
 
+              # The neenza/leetcode-problems database wraps
+              # its list of problems under a "questions" key
+              elif isinstance(data.get("questions"), list):
+
+                  problems = data["questions"]
+
               # If the dictionary itself contains
               # problem objects as values
               elif all(
@@ -222,62 +228,62 @@ jobs:
 
           print()
 
-                    print()
+          print()
 
 
-                    # ============================================================
-                    # STEP 3 — BUILD DIFFICULTY MAP
-                    # ============================================================
+          # ============================================================
+          # STEP 3 — BUILD DIFFICULTY MAP
+          # ============================================================
 
-                    print("=" * 60)
-                    print("BUILDING DIFFICULTY MAP")
-                    print("=" * 60)
+          print("=" * 60)
+          print("BUILDING DIFFICULTY MAP")
+          print("=" * 60)
 
-                    difficulty_map = {}
+          difficulty_map = {}
 
-                    for problem in problems:
+          for problem in problems:
 
-                        frontend_id = problem.get(
-                            "frontend_id"
-                        )
+              frontend_id = problem.get(
+                  "frontend_id"
+              )
 
-                        difficulty = problem.get(
-                            "difficulty"
-                        )
+              difficulty = problem.get(
+                  "difficulty"
+              )
 
-                        if not frontend_id:
-                            continue
+              if not frontend_id:
+                  continue
 
-                        try:
+              try:
 
-                            frontend_id = int(
-                                frontend_id
-                            )
+                  frontend_id = int(
+                      frontend_id
+                  )
 
-                        except (
-                            ValueError,
-                            TypeError
-                        ):
+              except (
+                  ValueError,
+                  TypeError
+              ):
 
-                            continue
+                  continue
 
-                        if difficulty in {
-                            "Easy",
-                            "Medium",
-                            "Hard"
-                        }:
+              if difficulty in {
+                  "Easy",
+                  "Medium",
+                  "Hard"
+              }:
 
-                            difficulty_map[
-                                frontend_id
-                            ] = difficulty
+                  difficulty_map[
+                      frontend_id
+                  ] = difficulty
 
 
-                    print(
-                        f"Difficulty entries loaded: "
-                        f"{len(difficulty_map)}"
-                    )
+          print(
+              f"Difficulty entries loaded: "
+              f"{len(difficulty_map)}"
+          )
 
-                    print()
+          print()
 
 
           # ============================================================
