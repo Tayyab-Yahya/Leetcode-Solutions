@@ -14,10 +14,11 @@ permissions:
 
 jobs:
   update-stats:
-    name: Calculate LeetCode Statistics
+    name: Update LeetCode Statistics
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -31,15 +32,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Calculate LeetCode statistics
+      - name: Calculate LeetCode Statistics
         run: |
+
           python <<'PY'
+
           import re
           import sys
+          import json
           import requests
           from pathlib import Path
 
+
+          # ============================================================
+          # CONFIGURATION
+          # ============================================================
+
           README = Path("README.md")
+
+          DATABASE_URL = (
+              "https://raw.githubusercontent.com/"
+              "neenza/leetcode-problems/master/"
+              "merged_problems.json"
+          )
 
           EXTENSIONS = {
               ".cpp",
@@ -55,15 +70,16 @@ jobs:
               ".cs"
           }
 
+
           # ============================================================
-          # 1. Find solution files
+          # STEP 1 — FIND SOLUTION FILES
           # ============================================================
+
+          print("=" * 60)
+          print("SCANNING SOLUTION FILES")
+          print("=" * 60)
 
           problem_ids = set()
-
-          print("=" * 60)
-          print("SCANNING REPOSITORY")
-          print("=" * 60)
 
           for path in Path(".").rglob("*"):
 
@@ -71,16 +87,20 @@ jobs:
                   continue
 
               # Ignore hidden directories
-              if any(part.startswith(".") for part in path.parts):
+              if any(
+                  part.startswith(".")
+                  for part in path.parts
+              ):
                   continue
 
               if path.suffix.lower() not in EXTENSIONS:
                   continue
 
-              # Supports:
+              # Supported formats:
+              #
               # 1-Two Sum.cpp
-              # 1.Two Sum.cpp
-              # 1 Two Sum.cpp
+              # 1.Two Sum.java
+              # 1 Two Sum.py
               # 001-Two Sum.cpp
 
               match = re.match(
@@ -89,171 +109,130 @@ jobs:
               )
 
               if match:
-                  problem_id = int(match.group(1))
-                  problem_ids.add(problem_id)
+
+                  problem_id = int(
+                      match.group(1)
+                  )
+
+                  problem_ids.add(
+                      problem_id
+                  )
 
                   print(
-                      f"Found: {path.name} -> #{problem_id}"
+                      f"Found: {path.name} "
+                      f"-> #{problem_id}"
                   )
 
-          print()
-          print(f"Unique problems found: {len(problem_ids)}")
-          print()
 
-          if not problem_ids:
-              print("ERROR: No solution files found.")
-              sys.exit(1)
-
-          # ============================================================
-          # 2. LeetCode GraphQL
-          # ============================================================
-
-          GRAPHQL_URL = "https://leetcode.com/graphql/"
-
-          LIST_QUERY = """
-          query problemsetQuestionList(
-              $categorySlug: String
-              $limit: Int
-              $skip: Int
-          ) {
-              problemsetQuestionList(
-                  categorySlug: $categorySlug
-                  limit: $limit
-                  skip: $skip
-              ) {
-                  total
-                  questions {
-                      questionFrontendId
-                      title
-                      titleSlug
-                      difficulty
-                  }
-              }
-          }
-          """
-
-          HEADERS = {
-              "Content-Type": "application/json",
-              "User-Agent": "Mozilla/5.0",
-              "Referer": "https://leetcode.com/"
-          }
-
-          session = requests.Session()
-          session.headers.update(HEADERS)
-
-          # ============================================================
-          # 3. Download LeetCode problem list
-          # ============================================================
-
-          print("=" * 60)
-          print("FETCHING LEETCODE DATA")
-          print("=" * 60)
-
-          slug_map = {}
-
-          limit = 100
-          skip = 0
-
-          while True:
-
-              payload = {
-                  "query": LIST_QUERY,
-                  "variables": {
-                      "categorySlug": "",
-                      "limit": limit,
-                      "skip": skip
-                  }
-              }
-
-              response = session.post(
-                  GRAPHQL_URL,
-                  json=payload,
-                  timeout=60
-              )
-
-              print(
-                  f"HTTP Status: {response.status_code}"
-              )
-
-              response.raise_for_status()
-
-              result = response.json()
-
-              if "errors" in result:
-                  print("LeetCode GraphQL error:")
-                  print(result["errors"])
-                  sys.exit(1)
-
-              problemset = (
-                  result
-                  .get("data", {})
-                  .get("problemsetQuestionList")
-              )
-
-              if not problemset:
-                  print("ERROR: No LeetCode problem data.")
-                  print(result)
-                  sys.exit(1)
-
-              questions = problemset.get(
-                  "questions",
-                  []
-              )
-
-              total_available = problemset.get(
-                  "total",
-                  0
-              )
-
-              for question in questions:
-
-                  question_id = question.get(
-                      "questionFrontendId"
-                  )
-
-                  slug = question.get(
-                      "titleSlug"
-                  )
-
-                  if question_id and slug:
-                      try:
-                          slug_map[int(question_id)] = slug
-                      except ValueError:
-                          pass
-
-              print(
-                  f"Loaded {len(slug_map)} problems..."
-              )
-
-              if (
-                  not questions
-                  or skip + len(questions) >= total_available
-              ):
-                  break
-
-              skip += limit
+          total = len(problem_ids)
 
           print()
           print(
-              f"Total LeetCode problems loaded: "
-              f"{len(slug_map)}"
+              f"Total unique problems found: {total}"
           )
           print()
 
+
+          if total == 0:
+
+              print(
+                  "ERROR: No LeetCode solution files found."
+              )
+
+              sys.exit(1)
+
+
           # ============================================================
-          # 4. Get difficulty for our problems
+          # STEP 2 — DOWNLOAD LEETCODE DATABASE
           # ============================================================
 
-          QUESTION_QUERY = """
-          query questionData($titleSlug: String!) {
-              question(titleSlug: $titleSlug) {
-                  questionFrontendId
-                  difficulty
-                  title
-                  titleSlug
-              }
-          }
-          """
+          print("=" * 60)
+          print("DOWNLOADING LEETCODE DATABASE")
+          print("=" * 60)
+
+          response = requests.get(
+              DATABASE_URL,
+              timeout=120
+          )
+
+          print(
+              f"HTTP Status: {response.status_code}"
+          )
+
+          response.raise_for_status()
+
+          problems = response.json()
+
+          print(
+              f"Database downloaded successfully."
+          )
+
+          print(
+              f"Problems in database: "
+              f"{len(problems)}"
+          )
+
+          print()
+
+
+          # ============================================================
+          # STEP 3 — BUILD DIFFICULTY MAP
+          # ============================================================
+
+          print("=" * 60)
+          print("BUILDING DIFFICULTY MAP")
+          print("=" * 60)
+
+          difficulty_map = {}
+
+          for problem in problems:
+
+              frontend_id = problem.get(
+                  "frontend_id"
+              )
+
+              difficulty = problem.get(
+                  "difficulty"
+              )
+
+              if not frontend_id:
+                  continue
+
+              try:
+
+                  frontend_id = int(
+                      frontend_id
+                  )
+
+              except (
+                  ValueError,
+                  TypeError
+              ):
+
+                  continue
+
+              if difficulty in {
+                  "Easy",
+                  "Medium",
+                  "Hard"
+              }:
+
+                  difficulty_map[
+                      frontend_id
+                  ] = difficulty
+
+
+          print(
+              f"Difficulty entries loaded: "
+              f"{len(difficulty_map)}"
+          )
+
+          print()
+
+
+          # ============================================================
+          # STEP 4 — COUNT DIFFICULTIES
+          # ============================================================
 
           easy = 0
           medium = 0
@@ -261,99 +240,87 @@ jobs:
 
           unknown = []
 
+
           print("=" * 60)
-          print("CHECKING DIFFICULTIES")
+          print("CHECKING PROBLEM DIFFICULTIES")
           print("=" * 60)
 
-          for problem_id in sorted(problem_ids):
 
-              slug = slug_map.get(problem_id)
+          for problem_id in sorted(
+              problem_ids
+          ):
 
-              if not slug:
-                  print(
-                      f"#{problem_id}: NOT FOUND"
-                  )
-                  unknown.append(problem_id)
-                  continue
-
-              payload = {
-                  "query": QUESTION_QUERY,
-                  "variables": {
-                      "titleSlug": slug
-                  }
-              }
-
-              response = session.post(
-                  GRAPHQL_URL,
-                  json=payload,
-                  timeout=60
+              difficulty = difficulty_map.get(
+                  problem_id
               )
 
-              response.raise_for_status()
-
-              result = response.json()
-
-              if "errors" in result:
-                  print(
-                      f"#{problem_id}: API ERROR"
-                  )
-                  unknown.append(problem_id)
-                  continue
-
-              question = (
-                  result
-                  .get("data", {})
-                  .get("question")
-              )
-
-              if not question:
-                  print(
-                      f"#{problem_id}: NOT FOUND"
-                  )
-                  unknown.append(problem_id)
-                  continue
-
-              difficulty = question.get(
-                  "difficulty"
-              )
-
-              print(
-                  f"#{problem_id}: {difficulty}"
-              )
 
               if difficulty == "Easy":
+
                   easy += 1
 
+
               elif difficulty == "Medium":
+
                   medium += 1
 
+
               elif difficulty == "Hard":
+
                   hard += 1
 
+
               else:
-                  unknown.append(problem_id)
 
-          total = len(problem_ids)
+                  unknown.append(
+                      problem_id
+                  )
 
-          # ============================================================
-          # 5. Print final statistics
-          # ============================================================
+
+              print(
+                  f"#{problem_id}: "
+                  f"{difficulty or 'NOT FOUND'}"
+              )
+
 
           print()
+
+
+          # ============================================================
+          # STEP 5 — FINAL STATISTICS
+          # ============================================================
+
           print("=" * 60)
-          print("FINAL STATISTICS")
-          print("=" * 60)
-          print(f"Total  : {total}")
-          print(f"Easy   : {easy}")
-          print(f"Medium : {medium}")
-          print(f"Hard   : {hard}")
+          print("FINAL LEETCODE STATISTICS")
           print("=" * 60)
 
+          print(
+              f"Total  : {total}"
+          )
+
+          print(
+              f"Easy   : {easy}"
+          )
+
+          print(
+              f"Medium : {medium}"
+          )
+
+          print(
+              f"Hard   : {hard}"
+          )
+
+          print("=" * 60)
+
+
           if unknown:
+
               print()
+
               print(
-                  "Could not determine difficulty for:"
+                  "WARNING: Difficulty not found for:"
               )
+
               print(
                   ", ".join(
                       str(x)
@@ -361,20 +328,27 @@ jobs:
                   )
               )
 
+
           # ============================================================
-          # 6. Read README
+          # STEP 6 — READ README
           # ============================================================
 
           if not README.exists():
-              print("ERROR: README.md not found.")
+
+              print(
+                  "ERROR: README.md not found."
+              )
+
               sys.exit(1)
+
 
           readme = README.read_text(
               encoding="utf-8"
           )
 
+
           # ============================================================
-          # 7. Replace README statistics
+          # STEP 7 — UPDATE README
           # ============================================================
 
           def replace_marker(
@@ -386,14 +360,18 @@ jobs:
 
               pattern = (
                   re.escape(start_marker)
-                  + r".*?"
-                  + re.escape(end_marker)
+                  +
+                  r".*?"
+                  +
+                  re.escape(end_marker)
               )
 
               replacement = (
                   start_marker
-                  + str(value)
-                  + end_marker
+                  +
+                  str(value)
+                  +
+                  end_marker
               )
 
               updated, count = re.subn(
@@ -404,15 +382,22 @@ jobs:
                   flags=re.DOTALL
               )
 
+
               if count != 1:
+
                   raise RuntimeError(
-                      f"README marker missing: "
-                      f"{start_marker}"
+                      "README marker not found: "
+                      +
+                      start_marker
                   )
+
 
               return updated
 
-          # Main table
+
+          # ------------------------------------------------------------
+          # Main statistics table
+          # ------------------------------------------------------------
 
           readme = replace_marker(
               readme,
@@ -421,12 +406,14 @@ jobs:
               total
           )
 
+
           readme = replace_marker(
               readme,
               "<!-- EASY_START -->",
               "<!-- EASY_END -->",
               easy
           )
+
 
           readme = replace_marker(
               readme,
@@ -435,6 +422,7 @@ jobs:
               medium
           )
 
+
           readme = replace_marker(
               readme,
               "<!-- HARD_START -->",
@@ -442,7 +430,10 @@ jobs:
               hard
           )
 
-          # Difficulty section
+
+          # ------------------------------------------------------------
+          # Difficulty breakdown
+          # ------------------------------------------------------------
 
           readme = replace_marker(
               readme,
@@ -451,12 +442,14 @@ jobs:
               easy
           )
 
+
           readme = replace_marker(
               readme,
               "<!-- MEDIUM_PROGRESS_START -->",
               "<!-- MEDIUM_PROGRESS_END -->",
               medium
           )
+
 
           readme = replace_marker(
               readme,
@@ -465,8 +458,9 @@ jobs:
               hard
           )
 
+
           # ============================================================
-          # 8. Save README
+          # STEP 8 — SAVE README
           # ============================================================
 
           README.write_text(
@@ -474,21 +468,40 @@ jobs:
               encoding="utf-8"
           )
 
+
           print()
-          print("README successfully updated!")
+          print(
+              "README successfully updated!"
+          )
 
           PY
 
+
+      # ================================================================
+      # COMMIT README
+      # ================================================================
+
       - name: Commit updated README
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git config user.name \
+            "github-actions[bot]"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add README.md
 
+
           if git diff --cached --quiet; then
-            echo "No README changes."
+
+              echo "No README changes."
+
           else
-            git commit -m "chore: update LeetCode statistics"
-            git push
+
+              git commit \
+                -m "chore: update LeetCode statistics"
+
+              git push
+
           fi

@@ -49,11 +49,11 @@
 
 </p>
 
-```text
-🟢 Easy      <!-- EASY_PROGRESS_START -->0<!-- EASY_PROGRESS_END -->
-🟡 Medium    <!-- MEDIUM_PROGRESS_START -->0<!-- MEDIUM_PROGRESS_END -->
-🔴 Hard      <!-- HARD_PROGRESS_START -->0<!-- HARD_PROGRESS_END -->
-```
+🟢 **Easy:** <!-- EASY_PROGRESS_START -->0<!-- EASY_PROGRESS_END -->
+
+🟡 **Medium:** <!-- MEDIUM_PROGRESS_START -->0<!-- MEDIUM_PROGRESS_END -->
+
+🔴 **Hard:** <!-- HARD_PROGRESS_START -->0<!-- HARD_PROGRESS_END -->
 
 > The numbers above are generated automatically from the solution files in this repository.
 
