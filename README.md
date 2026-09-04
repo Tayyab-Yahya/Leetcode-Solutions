@@ -31,7 +31,7 @@
 
 |               🧠 Total Solved               |                  🟢 Easy                  |                   🟡 Medium                   |                  🔴 Hard                  |
 | :-----------------------------------------: | :---------------------------------------: | :-------------------------------------------: | :---------------------------------------: |
-| **<!-- TOTAL_START -->70<!-- TOTAL_END -->** | **<!-- EASY_START -->34<!-- EASY_END -->** | **<!-- MEDIUM_START -->34<!-- MEDIUM_END -->** | **<!-- HARD_START -->2<!-- HARD_END -->** |
+| **<!-- TOTAL_START -->71<!-- TOTAL_END -->** | **<!-- EASY_START -->34<!-- EASY_END -->** | **<!-- MEDIUM_START -->34<!-- MEDIUM_END -->** | **<!-- HARD_START -->3<!-- HARD_END -->** |
 
 </p>
 
@@ -53,7 +53,7 @@
 
 🟡 **Medium:** <!-- MEDIUM_PROGRESS_START -->34<!-- MEDIUM_PROGRESS_END -->
 
-🔴 **Hard:** <!-- HARD_PROGRESS_START -->2<!-- HARD_PROGRESS_END -->
+🔴 **Hard:** <!-- HARD_PROGRESS_START -->3<!-- HARD_PROGRESS_END -->
 
 > The numbers above are generated automatically from the solution files in this repository.
 
